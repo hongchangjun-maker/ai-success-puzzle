@@ -1,0 +1,39 @@
+{
+  "name": "ai-success-puzzle",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "cf:types": "wrangler types",
+    "cf:check": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "lucide-react": "^1.28.0",
+    "pdfjs-dist": "^6.2.108",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260730.1",
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/node": "^26.1.2",
+    "@vitejs/plugin-react": "^6.0.5",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.8.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.26.0"
+  }
+}

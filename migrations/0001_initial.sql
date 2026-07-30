@@ -1,0 +1,61 @@
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_state (
+  user_id TEXT PRIMARY KEY,
+  state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  provider TEXT NOT NULL DEFAULT 'openai',
+  model TEXT NOT NULL DEFAULT 'gpt-4.1-mini',
+  encrypted_key TEXT,
+  key_hint TEXT,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_runs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_login_attempts (
+  client_hash TEXT PRIMARY KEY,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  blocked_until TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO settings (key, value) VALUES ('rights_approved', 'true');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('book_public', 'true');
+INSERT OR IGNORE INTO ai_settings (id) VALUES (1);
