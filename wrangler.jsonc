@@ -24,8 +24,12 @@
       "bucket_name": "ai-success-puzzle-books"
     }
   ],
+  "ai": {
+    "binding": "AI"
+  },
   "vars": {
     "OPENAI_MODEL": "gpt-4.1-mini",
+    "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "BOOK_OBJECT_KEY": "books/success-puzzle-v1.pdf",
     "APP_NAME": "AI 성공의 퍼즐조각"
   },

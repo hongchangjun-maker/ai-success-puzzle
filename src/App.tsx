@@ -406,7 +406,7 @@ function Coach({
       </section>
       <section className="chat-panel">
         {!status.connected ? (
-          <div className="empty-state"><LockKeyhole /><strong>AI 제공자가 아직 연결되지 않았습니다.</strong><p>마스터 관리자가 OpenAI API 키를 저장하고 연결해야 코칭이 활성화됩니다. 진단·플랜·전자책은 AI 없이도 모두 사용할 수 있습니다.</p></div>
+          <div className="empty-state"><LockKeyhole /><strong>AI 제공자가 아직 연결되지 않았습니다.</strong><p>기본 Cloudflare AI 또는 관리자가 설정한 OpenAI 연결을 확인해 주세요. 진단·플랜·전자책은 AI 없이도 모두 사용할 수 있습니다.</p></div>
         ) : (
           <>
             <div className="prompt-chips">{["내 성장조각의 첫 행동을 정해줘", "이번 주 계획을 30분 단위로 나눠줘", "최근 실패를 비난 없이 복기해줘"].map((prompt) => <button key={prompt} onClick={() => setMessage(prompt)}>{prompt}</button>)}</div>

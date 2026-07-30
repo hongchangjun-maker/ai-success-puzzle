@@ -207,7 +207,12 @@ async function handleAdminStatus(request: Request, env: RuntimeEnv) {
   return json({
     authenticated: true,
     users: users?.count ?? 0,
-    ai: { enabled: ai.enabled, model: ai.model, keyHint: ai.keyHint },
+    ai: {
+      enabled: true,
+      model: ai.enabled ? ai.model : env.WORKERS_AI_MODEL,
+      provider: ai.enabled ? "openai" : "cloudflare-workers-ai",
+      keyHint: ai.keyHint,
+    },
     book: { rightsApproved: rights === "true", public: bookPublic === "true", uploaded: Boolean(book) },
   });
 }
@@ -292,35 +297,54 @@ async function handleAiCoach(request: Request, env: RuntimeEnv) {
   const user = await ensureUser(request, env);
   if (!validateMutation(request)) return json({ error: "허용되지 않은 요청입니다." }, 403);
   const config = await getAiConfig(env);
-  if (!config.enabled) return json({ error: "AI가 연결되지 않았습니다." }, 503);
   const body = await readBody<{ message?: string; context?: unknown }>(request);
   const message = (body.message ?? "").trim().slice(0, 3_000);
   if (!message) return json({ error: "질문을 입력하세요." }, 400);
+  const dailyUsage = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM ai_runs WHERE user_id = ? AND created_at >= datetime('now', '-1 day')",
+  ).bind(user.id).first<{ count: number }>();
+  if ((dailyUsage?.count ?? 0) >= 10) return json({ error: "오늘의 무료 AI 코칭 10회를 모두 사용했습니다. 내일 다시 이용해 주세요." }, 429);
   const runId = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO ai_runs (id, user_id, model, status) VALUES (?, ?, ?, 'started')").bind(runId, user.id, config.model).run();
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: config.model,
-      max_output_tokens: 900,
-      input: [
-        {
-          role: "system",
-          content: "당신은 AI 성공의 퍼즐조각 코치다. 성공을 보장하거나 사용자를 등급화하지 않는다. 책의 관점, 사용자의 실제 기록, 앱의 계산 결과를 구분한다. 낮은 점수를 인격이나 능력의 결함으로 해석하지 않는다. 과로, 위험투자, 기만적 영업, 맹목적 복종을 권하지 않는다. 관찰 → 근거 → 선택 가능한 작은 행동 → 사용자의 승인 순서로 간결한 한국어로 답한다.",
-        },
-        { role: "user", content: `사용자 질문:\n${message}\n\n현재 앱 기록:\n${JSON.stringify(body.context ?? {})}` },
-      ],
-    }),
-  });
-  if (!response.ok) {
-    await env.DB.prepare("UPDATE ai_runs SET status = 'failed' WHERE id = ?").bind(runId).run();
-    return json({ error: "AI 제공자 응답에 실패했습니다. 잠시 후 다시 시도하세요." }, 502);
+  const activeModel = config.enabled ? config.model : env.WORKERS_AI_MODEL;
+  await env.DB.prepare("INSERT INTO ai_runs (id, user_id, model, status) VALUES (?, ?, ?, 'started')").bind(runId, user.id, activeModel).run();
+  const systemPrompt = "당신은 AI 성공의 퍼즐조각 코치다. 성공을 보장하거나 사용자를 등급화하지 않는다. 책의 관점, 사용자의 실제 기록, 앱의 계산 결과를 구분한다. 낮은 점수를 인격이나 능력의 결함으로 해석하지 않는다. 과로, 위험투자, 기만적 영업, 맹목적 복종을 권하지 않는다. 관찰 → 근거 → 선택 가능한 작은 행동 → 사용자의 승인 순서로 간결한 한국어로 답한다.";
+  let answer: string;
+  if (config.enabled) {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: config.model,
+        max_output_tokens: 900,
+        input: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `사용자 질문:\n${message}\n\n현재 앱 기록:\n${JSON.stringify(body.context ?? {})}` },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      await env.DB.prepare("UPDATE ai_runs SET status = 'failed' WHERE id = ?").bind(runId).run();
+      return json({ error: "AI 제공자 응답에 실패했습니다. 잠시 후 다시 시도하세요." }, 502);
+    }
+    const data = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
+    answer = data.output_text ?? data.output?.flatMap((item) => item.content ?? []).map((content) => content.text ?? "").join("\n").trim() ?? "";
+  } else {
+    try {
+      const result = await env.AI.run(env.WORKERS_AI_MODEL, {
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `사용자 질문:\n${message}\n\n현재 앱 기록:\n${JSON.stringify(body.context ?? {})}` },
+        ],
+        max_tokens: 900,
+      });
+      answer = typeof result === "object" && result && "response" in result ? String(result.response ?? "") : "";
+    } catch {
+      await env.DB.prepare("UPDATE ai_runs SET status = 'failed' WHERE id = ?").bind(runId).run();
+      return json({ error: "Cloudflare AI 응답에 실패했습니다. 잠시 후 다시 시도하세요." }, 502);
+    }
   }
-  const data = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
-  const answer = data.output_text ?? data.output?.flatMap((item) => item.content ?? []).map((content) => content.text ?? "").join("\n").trim();
   await env.DB.prepare("UPDATE ai_runs SET status = 'completed' WHERE id = ?").bind(runId).run();
-  return json({ answer: answer || "응답 내용이 비어 있습니다.", runId, draft: true });
+  return json({ answer: answer || "응답 내용이 비어 있습니다.", runId, draft: true, model: activeModel });
 }
 
 async function routeApi(request: Request, env: RuntimeEnv) {
@@ -330,7 +354,12 @@ async function routeApi(request: Request, env: RuntimeEnv) {
   if (path === "/api/book/pdf" && ["GET", "HEAD"].includes(request.method)) return handleBook(request, env);
   if (path === "/api/ai/status" && request.method === "GET") {
     const config = await getAiConfig(env);
-    return json({ connected: config.enabled, model: config.enabled ? config.model : undefined });
+    return json({
+      connected: true,
+      model: config.enabled ? config.model : env.WORKERS_AI_MODEL,
+      provider: config.enabled ? "openai" : "cloudflare-workers-ai",
+      dailyLimit: 10,
+    });
   }
   if (path === "/api/ai/coach" && request.method === "POST") return handleAiCoach(request, env);
   if (path === "/api/admin/login" && request.method === "POST") return handleAdminLogin(request, env);

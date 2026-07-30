@@ -4,7 +4,7 @@
 
 - 운영 서비스: https://ai-success-puzzle.hhongcjun.workers.dev
 - 관리자 초기 비밀번호: 배포 환경의 `ADMIN_BOOTSTRAP_PASSWORD` Secret으로만 설정
-- 현재 AI 상태: API 키가 없으면 명시적으로 `연결 안 됨`
+- 현재 AI 상태: OpenAI 미설정 시 Cloudflare Workers AI 기본 코치 사용
 
 ## 로컬 실행
 
