@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { dimensions, scaleLabels } from "./data/dimensions";
+import { SuccessPuzzleLogo } from "./components/SuccessPuzzleLogo";
 
 const AdminModal = lazy(() => import("./components/AdminModal").then((module) => ({ default: module.AdminModal })));
 const BookViewer = lazy(() => import("./components/BookViewer").then((module) => ({ default: module.BookViewer })));
@@ -121,7 +122,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={() => { setView("today"); setHeroCollapsed(false); }}>
-          <span className="brand-mark"><Sparkles size={19} /></span>
+          <span className="brand-mark"><SuccessPuzzleLogo /></span>
           <span><strong>AI 성공의 퍼즐조각</strong><small>읽고 · 점검하고 · 행동하다</small></span>
         </button>
         <div className="topbar-actions">

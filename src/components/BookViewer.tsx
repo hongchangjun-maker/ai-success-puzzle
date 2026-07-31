@@ -64,7 +64,18 @@ export function BookViewer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [direction, setDirection] = useState<"next" | "prev" | "">("");
+  const [fitMode, setFitMode] = useState<"page" | "width">("page");
+  const [singlePage, setSinglePage] = useState(false);
   const dragStart = useRef<number | null>(null);
+  const readerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 720px)");
+    const update = () => setSinglePage(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,14 +109,15 @@ export function BookViewer({
     };
   }, []);
 
-  const spreadIndex = Math.max(0, Math.min(index - (index % 2), Math.max(0, logicalPages.length - 1)));
+  const spreadIndex = Math.max(0, Math.min(singlePage ? index : index - (index % 2), Math.max(0, logicalPages.length - 1)));
   const current = useMemo(
-    () => [logicalPages[spreadIndex], logicalPages[spreadIndex + 1]],
-    [logicalPages, spreadIndex],
+    () => [logicalPages[spreadIndex], singlePage ? undefined : logicalPages[spreadIndex + 1]],
+    [logicalPages, singlePage, spreadIndex],
   );
 
   function move(delta: number) {
-    const next = Math.max(0, Math.min(spreadIndex + delta * 2, Math.max(0, logicalPages.length - 1)));
+    const step = singlePage ? 1 : 2;
+    const next = Math.max(0, Math.min(spreadIndex + delta * step, Math.max(0, logicalPages.length - 1)));
     setDirection(delta > 0 ? "next" : "prev");
     setIndex(next);
     onPageChange(next);
@@ -119,14 +131,21 @@ export function BookViewer({
     return <div className="empty-state"><strong>전자책을 열 수 없습니다.</strong><p>{error}</p></div>;
   }
 
+  const pagesShown = current[1] ? 2 : 1;
+  const progress = logicalPages.length ? Math.round((Math.min(logicalPages.length, spreadIndex + pagesShown) / logicalPages.length) * 100) : 0;
+
   return (
-    <section className="reader-shell" aria-label="전자책 뷰어">
+    <section ref={readerRef} className="reader-shell" aria-label="전자책 뷰어">
       <div className="reader-toolbar">
         <div>
           <span className="eyebrow">원문 전자책</span>
           <strong>비즈니스 성공의 퍼즐조각</strong>
         </div>
         <div className="reader-actions">
+          <div className="fit-switch" aria-label="페이지 표시 방식">
+            <button className={fitMode === "page" ? "active" : ""} aria-pressed={fitMode === "page"} onClick={() => setFitMode("page")}>전체 보기</button>
+            <button className={fitMode === "width" ? "active" : ""} aria-pressed={fitMode === "width"} onClick={() => setFitMode("width")}>너비 맞춤</button>
+          </div>
           <label className="page-jump">
             <Search size={16} />
             <input
@@ -143,13 +162,14 @@ export function BookViewer({
             />
             / {logicalPages.length}
           </label>
-          <button className="icon-button" onClick={() => window.document.documentElement.requestFullscreen?.()} aria-label="전체화면">
+          <button className="icon-button" onClick={() => readerRef.current?.requestFullscreen?.()} aria-label="전자책 전체화면" title="전자책 전체화면">
             <Maximize2 size={18} />
           </button>
         </div>
       </div>
+      <div className="reader-progress" aria-label={`독서 진행률 ${progress}%`}><i style={{ width: `${progress}%` }} /></div>
       <div
-        className={`book-spread ${direction ? `turn-${direction}` : ""}`}
+        className={`book-spread fit-${fitMode} ${direction ? `turn-${direction}` : ""}`}
         onPointerDown={(event) => {
           dragStart.current = event.clientX;
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -167,10 +187,10 @@ export function BookViewer({
       </div>
       <div className="reader-nav">
         <button onClick={() => move(-1)} disabled={spreadIndex === 0}><ChevronLeft /> 이전</button>
-        <span>{current[0]?.label ?? 1}–{current[1]?.label ?? current[0]?.label}면</span>
-        <button onClick={() => move(1)} disabled={spreadIndex >= logicalPages.length - 2}>다음 <ChevronRight /></button>
+        <span aria-live="polite">{current[1] ? `${current[0]?.label ?? 1}–${current[1].label}면` : `${current[0]?.label ?? 1}면`} · {progress}%</span>
+        <button onClick={() => move(1)} disabled={spreadIndex >= logicalPages.length - pagesShown}>다음 <ChevronRight /></button>
       </div>
-      <p className="reader-note">모서리를 좌우로 드래그하거나 버튼을 눌러 넘기세요. 원문은 저자의 시대적 관점을 포함합니다.</p>
+      <p className="reader-note">‘전체 보기’는 페이지 끝까지 한 화면에 표시합니다. 글자가 작으면 ‘너비 맞춤’으로 바꾸고 위아래로 스크롤하세요. 읽던 면은 자동 저장됩니다.</p>
     </section>
   );
 }
