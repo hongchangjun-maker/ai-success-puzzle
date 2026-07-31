@@ -60,6 +60,7 @@ function uid() {
 
 export default function App() {
   const [view, setView] = useState<View>("today");
+  const [heroCollapsed, setHeroCollapsed] = useState(false);
   const [state, setState] = useState<AppState>(initialState);
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
@@ -111,10 +112,15 @@ export default function App() {
     setState((current) => ({ ...current, ...partial }));
   }
 
+  function navigate(target: View) {
+    setHeroCollapsed(true);
+    setView(target);
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => setView("today")}>
+        <button className="brand" onClick={() => { setView("today"); setHeroCollapsed(false); }}>
           <span className="brand-mark"><Sparkles size={19} /></span>
           <span><strong>AI 성공의 퍼즐조각</strong><small>읽고 · 점검하고 · 행동하다</small></span>
         </button>
@@ -127,21 +133,21 @@ export default function App() {
         </div>
       </header>
 
-      <section className="hero">
-        <img src="/success-hero.png" alt="유럽 여성과 한국 남성이 비즈니스 대화를 나누는 모습" />
+      <section className={`hero ${heroCollapsed ? "collapsed" : ""}`}>
+        <img src="/success-hero-v2.png" alt="젊은 유럽 여성과 한국 남성이 비즈니스 대화를 나누는 모습" />
         <div className="hero-overlay" />
         <div className="hero-copy">
           <span className="hero-kicker">YOUR SUCCESS, PIECE BY PIECE</span>
           <h1>성공은 한 번의 도약이 아니라<br /><em>매일 맞추는 퍼즐</em>입니다.</h1>
           <p>책의 원리를 나의 강점과 행동으로 바꾸는 90일 여정을 시작하세요.</p>
-          <button onClick={() => setView(answeredCount ? "today" : "diagnosis")}>{answeredCount ? "오늘의 조각 보기" : "무료 진단 시작"} <ChevronRight /></button>
+          <button onClick={() => navigate(answeredCount ? "today" : "diagnosis")}>{answeredCount ? "오늘의 조각 보기" : "무료 진단 시작"} <ChevronRight /></button>
         </div>
       </section>
 
       <nav className="main-nav" aria-label="주요 메뉴">
         {navItems.map((item) => {
           const Icon = item.icon;
-          return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={19} /><span>{item.label}</span></button>;
+          return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={19} /><span>{item.label}</span></button>;
         })}
       </nav>
 
@@ -152,7 +158,7 @@ export default function App() {
             average={average}
             strongest={strongest}
             growth={growth}
-            onNavigate={setView}
+            onNavigate={navigate}
             onToggle={(id) => patch({ actions: state.actions.map((action) => action.id === id ? { ...action, done: !action.done } : action) })}
           />
         )}
@@ -163,11 +169,11 @@ export default function App() {
             onAnswer={(key, value) => patch({ answers: { ...state.answers, [key]: value } })}
             onComplete={() => {
               patch({ baselineAt: state.baselineAt ?? new Date().toISOString() });
-              setView("map");
+              navigate("map");
             }}
           />
         )}
-        {view === "map" && <PuzzleMap scores={scores} average={average} onPlan={() => setView("plan")} />}
+        {view === "map" && <PuzzleMap scores={scores} average={average} onPlan={() => navigate("plan")} />}
         {view === "plan" && <Plan state={state} patch={patch} />}
         {view === "book" && <Suspense fallback={<div className="book-loading">전자책 모듈을 준비하는 중입니다.</div>}><BookViewer savedPage={state.bookPage} onPageChange={(bookPage) => patch({ bookPage })} /></Suspense>}
         {view === "coach" && <Coach scores={scores} state={state} />}
