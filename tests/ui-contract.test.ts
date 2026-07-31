@@ -14,7 +14,15 @@ describe("reader and brand UI contracts", () => {
 
   it("uses a single sequential page on mobile", () => {
     expect(bookViewer).toContain("const step = singlePage ? 1 : 2;");
-    expect(styles).toContain(".book-page:last-child { display: none; }");
+    expect(styles).toContain(".book-page--right { display: none; }");
+  });
+
+  it("supports click, drag, keyboard, and a full 3D page turn", () => {
+    expect(bookViewer).toContain("onPointerMove");
+    expect(bookViewer).toContain("onClick={(event) => turnFromClick");
+    expect(bookViewer).toContain('event.key === "ArrowRight"');
+    expect(styles).toContain("transform: rotateY(var(--turn-angle));");
+    expect(styles).toContain("transform-style: preserve-3d");
   });
 
   it("renders the custom dimensional puzzle logo", () => {

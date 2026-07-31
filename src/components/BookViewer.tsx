@@ -6,13 +6,16 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 type LogicalPage = { pdf: number; side: "full" | "left" | "right"; label: number };
+type TurnDirection = "next" | "prev" | "";
 
 function PageCanvas({
   document: pdfDocument,
   page,
+  position,
 }: {
   document: pdfjsLib.PDFDocumentProxy;
   page?: LogicalPage;
+  position: "left" | "right";
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -45,7 +48,7 @@ function PageCanvas({
   }, [pdfDocument, page]);
 
   return (
-    <div className={`book-page ${page ? "" : "book-page--empty"}`}>
+    <div className={`book-page book-page--${position} ${page ? "" : "book-page--empty"}`}>
       {page ? <canvas ref={canvasRef} aria-label={`책 ${page.label}면`} /> : <div />}
     </div>
   );
@@ -63,10 +66,18 @@ export function BookViewer({
   const [index, setIndex] = useState(Math.max(0, savedPage));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [direction, setDirection] = useState<"next" | "prev" | "">("");
+  const [direction, setDirection] = useState<TurnDirection>("");
+  const [turnProgress, setTurnProgress] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [settling, setSettling] = useState(false);
   const [fitMode, setFitMode] = useState<"page" | "width">("page");
   const [singlePage, setSinglePage] = useState(false);
-  const dragStart = useRef<number | null>(null);
+  const pointer = useRef<{ x: number; moved: boolean } | null>(null);
+  const turnProgressRef = useRef(0);
+  const directionRef = useRef<TurnDirection>("");
+  const suppressClick = useRef(false);
+  const turnTimer = useRef<number | null>(null);
+  const turnFrame = useRef<number | null>(null);
   const readerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -75,6 +86,11 @@ export function BookViewer({
     update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => () => {
+    if (turnTimer.current !== null) window.clearTimeout(turnTimer.current);
+    if (turnFrame.current !== null) window.cancelAnimationFrame(turnFrame.current);
   }, []);
 
   useEffect(() => {
@@ -114,14 +130,102 @@ export function BookViewer({
     () => [logicalPages[spreadIndex], singlePage ? undefined : logicalPages[spreadIndex + 1]],
     [logicalPages, singlePage, spreadIndex],
   );
+  const pagesShown = current[1] ? 2 : 1;
+  const progress = logicalPages.length ? Math.round((Math.min(logicalPages.length, spreadIndex + pagesShown) / logicalPages.length) * 100) : 0;
+
+  function canTurn(turn: Exclude<TurnDirection, "">) {
+    return turn === "prev" ? spreadIndex > 0 : spreadIndex < logicalPages.length - pagesShown;
+  }
+
+  function finishTurn(turn: Exclude<TurnDirection, "">) {
+    if (settling || !canTurn(turn)) return;
+    const continuesDrag = directionRef.current === turn && turnProgressRef.current > 0;
+    directionRef.current = turn;
+    setDirection(turn);
+    setDragging(false);
+    setSettling(true);
+    if (continuesDrag) {
+      turnProgressRef.current = 1;
+      setTurnProgress(1);
+    } else {
+      turnProgressRef.current = 0;
+      setTurnProgress(0);
+      if (turnFrame.current !== null) window.cancelAnimationFrame(turnFrame.current);
+      turnFrame.current = window.requestAnimationFrame(() => {
+        turnFrame.current = window.requestAnimationFrame(() => {
+          turnProgressRef.current = 1;
+          setTurnProgress(1);
+          turnFrame.current = null;
+        });
+      });
+    }
+    if (turnTimer.current !== null) window.clearTimeout(turnTimer.current);
+    turnTimer.current = window.setTimeout(() => {
+      const delta = turn === "next" ? 1 : -1;
+      const step = singlePage ? 1 : 2;
+      const next = Math.max(0, Math.min(spreadIndex + delta * step, Math.max(0, logicalPages.length - 1)));
+      setIndex(next);
+      onPageChange(next);
+      directionRef.current = "";
+      turnProgressRef.current = 0;
+      setDirection("");
+      setSettling(false);
+      setTurnProgress(0);
+    }, 980);
+  }
+
+  function cancelTurn() {
+    setDragging(false);
+    setSettling(true);
+    turnProgressRef.current = 0;
+    setTurnProgress(0);
+    if (turnTimer.current !== null) window.clearTimeout(turnTimer.current);
+    turnTimer.current = window.setTimeout(() => {
+      directionRef.current = "";
+      setDirection("");
+      setSettling(false);
+    }, 360);
+  }
 
   function move(delta: number) {
-    const step = singlePage ? 1 : 2;
-    const next = Math.max(0, Math.min(spreadIndex + delta * step, Math.max(0, logicalPages.length - 1)));
-    setDirection(delta > 0 ? "next" : "prev");
-    setIndex(next);
-    onPageChange(next);
-    window.setTimeout(() => setDirection(""), 460);
+    const turn = delta > 0 ? "next" : "prev";
+    if (!canTurn(turn)) return;
+    finishTurn(turn);
+  }
+
+  function updateDrag(clientX: number, width: number) {
+    if (!pointer.current || settling) return;
+    const distance = clientX - pointer.current.x;
+    if (Math.abs(distance) < 3) return;
+    const turn: Exclude<TurnDirection, ""> = distance < 0 ? "next" : "prev";
+    if (!canTurn(turn)) return;
+    const nextProgress = Math.min(0.96, Math.abs(distance) / Math.max(160, width * 0.72));
+    pointer.current.moved = true;
+    directionRef.current = turn;
+    turnProgressRef.current = nextProgress;
+    setDirection(turn);
+    setDragging(true);
+    setTurnProgress(nextProgress);
+  }
+
+  function releaseDrag() {
+    if (!pointer.current) return;
+    const moved = pointer.current.moved;
+    pointer.current = null;
+    suppressClick.current = moved;
+    if (!moved || !directionRef.current) return;
+    if (turnProgressRef.current >= 0.18) finishTurn(directionRef.current);
+    else cancelTurn();
+  }
+
+  function turnFromClick(clientX: number, element: HTMLDivElement) {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    const turn = clientX < rect.left + rect.width / 2 ? "prev" : "next";
+    if (canTurn(turn)) finishTurn(turn);
   }
 
   if (loading) {
@@ -130,9 +234,6 @@ export function BookViewer({
   if (error || !document) {
     return <div className="empty-state"><strong>전자책을 열 수 없습니다.</strong><p>{error}</p></div>;
   }
-
-  const pagesShown = current[1] ? 2 : 1;
-  const progress = logicalPages.length ? Math.round((Math.min(logicalPages.length, spreadIndex + pagesShown) / logicalPages.length) * 100) : 0;
 
   return (
     <section ref={readerRef} className="reader-shell" aria-label="전자책 뷰어">
@@ -169,21 +270,30 @@ export function BookViewer({
       </div>
       <div className="reader-progress" aria-label={`독서 진행률 ${progress}%`}><i style={{ width: `${progress}%` }} /></div>
       <div
-        className={`book-spread fit-${fitMode} ${direction ? `turn-${direction}` : ""}`}
+        className={`book-spread fit-${fitMode} ${direction ? `turn-${direction}` : ""} ${dragging ? "is-dragging" : ""} ${settling ? "is-settling" : ""}`}
+        style={{ "--turn-angle": `${(direction === "next" ? -1 : 1) * turnProgress * 178}deg` } as React.CSSProperties}
+        role="group"
+        aria-label="책 페이지. 왼쪽을 누르면 이전 면, 오른쪽을 누르면 다음 면으로 이동합니다."
+        tabIndex={0}
         onPointerDown={(event) => {
-          dragStart.current = event.clientX;
+          if (settling) return;
+          pointer.current = { x: event.clientX, moved: false };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
-        onPointerUp={(event) => {
-          if (dragStart.current === null) return;
-          const distance = event.clientX - dragStart.current;
-          if (Math.abs(distance) > 45) move(distance < 0 ? 1 : -1);
-          dragStart.current = null;
+        onPointerMove={(event) => updateDrag(event.clientX, event.currentTarget.clientWidth)}
+        onPointerUp={releaseDrag}
+        onPointerCancel={cancelTurn}
+        onClick={(event) => turnFromClick(event.clientX, event.currentTarget)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") move(-1);
+          if (event.key === "ArrowRight") move(1);
         }}
       >
-        <PageCanvas document={document} page={current[0]} />
+        <PageCanvas document={document} page={current[0]} position="left" />
         <div className="book-gutter" />
-        <PageCanvas document={document} page={current[1]} />
+        <PageCanvas document={document} page={current[1]} position="right" />
+        <span className="page-corner page-corner--left" aria-hidden="true" />
+        <span className="page-corner page-corner--right" aria-hidden="true" />
       </div>
       <div className="reader-nav">
         <button onClick={() => move(-1)} disabled={spreadIndex === 0}><ChevronLeft /> 이전</button>
